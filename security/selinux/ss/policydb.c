@@ -76,60 +76,85 @@ static struct policydb_compat_info policydb_compat[] = {
 	{
 		.version	= POLICYDB_VERSION_BASE,
 		.sym_num	= SYM_NUM - 3,
-		.ocon_num	= OCON_NUM - 1,
+		.ocon_num	= OCON_NUM - 3,
 	},
 	{
 		.version	= POLICYDB_VERSION_BOOL,
 		.sym_num	= SYM_NUM - 2,
-		.ocon_num	= OCON_NUM - 1,
+		.ocon_num	= OCON_NUM - 3,
 	},
 	{
 		.version	= POLICYDB_VERSION_IPV6,
 		.sym_num	= SYM_NUM - 2,
-		.ocon_num	= OCON_NUM,
+		.ocon_num	= OCON_NUM - 2,
 	},
 	{
 		.version	= POLICYDB_VERSION_NLCLASS,
 		.sym_num	= SYM_NUM - 2,
-		.ocon_num	= OCON_NUM,
+		.ocon_num	= OCON_NUM - 2,
 	},
 	{
 		.version	= POLICYDB_VERSION_MLS,
 		.sym_num	= SYM_NUM,
-		.ocon_num	= OCON_NUM,
+		.ocon_num	= OCON_NUM - 2,
 	},
 	{
 		.version	= POLICYDB_VERSION_AVTAB,
 		.sym_num	= SYM_NUM,
-		.ocon_num	= OCON_NUM,
+		.ocon_num	= OCON_NUM - 2,
 	},
 	{
 		.version	= POLICYDB_VERSION_RANGETRANS,
 		.sym_num	= SYM_NUM,
-		.ocon_num	= OCON_NUM,
+		.ocon_num	= OCON_NUM - 2,
 	},
 	{
 		.version	= POLICYDB_VERSION_POLCAP,
 		.sym_num	= SYM_NUM,
-		.ocon_num	= OCON_NUM,
+		.ocon_num	= OCON_NUM - 2,
 	},
 	{
 		.version	= POLICYDB_VERSION_PERMISSIVE,
 		.sym_num	= SYM_NUM,
-		.ocon_num	= OCON_NUM,
+		.ocon_num	= OCON_NUM - 2,
 	},
 	{
 		.version	= POLICYDB_VERSION_BOUNDARY,
 		.sym_num	= SYM_NUM,
-		.ocon_num	= OCON_NUM,
+		.ocon_num	= OCON_NUM - 2,
 	},
 	{
 		.version	= POLICYDB_VERSION_FILENAME_TRANS,
 		.sym_num	= SYM_NUM,
-		.ocon_num	= OCON_NUM,
+		.ocon_num	= OCON_NUM - 2,
 	},
 	{
 		.version	= POLICYDB_VERSION_ROLETRANS,
+		.sym_num	= SYM_NUM,
+		.ocon_num	= OCON_NUM - 2,
+	},
+	{
+		.version	= POLICYDB_VERSION_NEW_OBJECT_DEFAULTS,
+		.sym_num	= SYM_NUM,
+		.ocon_num	= OCON_NUM - 2,
+	},
+	{
+		.version	= POLICYDB_VERSION_DEFAULT_TYPE,
+		.sym_num	= SYM_NUM,
+		.ocon_num	= OCON_NUM - 2,
+	},
+	{
+		.version	= POLICYDB_VERSION_CONSTRAINT_NAMES,
+		.sym_num	= SYM_NUM,
+		.ocon_num	= OCON_NUM - 2,
+	},
+	{
+		.version	= POLICYDB_VERSION_XPERMS_IOCTL,
+		.sym_num	= SYM_NUM,
+		.ocon_num	= OCON_NUM - 2,
+	},
+	{
+		.version	= POLICYDB_VERSION_INFINIBAND,
 		.sym_num	= SYM_NUM,
 		.ocon_num	= OCON_NUM,
 	},
@@ -1055,6 +1080,29 @@ out:
  * binary representation file.
  */
 
+static int str_read(char **strp, gfp_t flags, void *fp, u32 len)
+{
+	int rc;
+	char *str;
+
+	if ((len == 0) || (len == (u32)-1))
+		return -EINVAL;
+
+	str = kmalloc(len + 1, flags);
+	if (!str)
+		return -ENOMEM;
+
+	/* it's expected the caller should free the str */
+	*strp = str;
+
+	rc = next_entry(str, fp, len);
+	if (rc)
+		return rc;
+
+	str[len] = '\0';
+	return 0;
+}
+
 static int perm_read(struct policydb *p, struct hashtab *h, void *fp)
 {
 	char *key = NULL;
@@ -1146,6 +1194,31 @@ bad:
 	return rc;
 }
 
+static void type_set_init(struct type_set *t)
+{
+	ebitmap_init(&t->types);
+	ebitmap_init(&t->negset);
+}
+
+static int type_set_read(struct type_set *t, void *fp)
+{
+	__le32 buf[1];
+	int rc;
+
+	if (ebitmap_read(&t->types, fp))
+		return -EINVAL;
+	if (ebitmap_read(&t->negset, fp))
+		return -EINVAL;
+
+	rc = next_entry(buf, fp, sizeof(u32));
+	if (rc < 0)
+		return -EINVAL;
+	t->flags = le32_to_cpu(buf[0]);
+
+	return 0;
+
+}
+
 static int read_cons_helper(struct constraint_node **nodep, int ncons,
 			    int allowxtarget, void *fp)
 {
@@ -1215,6 +1288,19 @@ static int read_cons_helper(struct constraint_node **nodep, int ncons,
 				rc = ebitmap_read(&e->names, fp);
 				if (rc)
 					return rc;
+
+				/* <!-- AnClark NOTE: Process for policyvers >=
+					POLICYDB_VERSION_CONSTRAINT_NAMES	*/
+						e->type_names = kzalloc(sizeof
+						(*e->type_names),
+						GFP_KERNEL);
+					if (!e->type_names)
+						return -ENOMEM;
+					type_set_init(e->type_names);
+					rc = type_set_read(e->type_names, fp);
+					if (rc)
+						return rc;
+				/* --> */
 				break;
 			default:
 				return -EINVAL;
@@ -1306,6 +1392,22 @@ static int class_read(struct policydb *p, struct hashtab *h, void *fp)
 			goto bad;
 	}
 
+	if (p->policyvers >= POLICYDB_VERSION_NEW_OBJECT_DEFAULTS) {
+		rc = next_entry(buf, fp, sizeof(u32) * 3);
+		if (rc)
+			goto bad;
+
+		cladatum->default_user = le32_to_cpu(buf[0]);
+		cladatum->default_role = le32_to_cpu(buf[1]);
+		cladatum->default_range = le32_to_cpu(buf[2]);
+	}
+
+	if (p->policyvers >= POLICYDB_VERSION_DEFAULT_TYPE) {
+		rc = next_entry(buf, fp, sizeof(u32) * 1);
+		if (rc)
+			goto bad;
+		cladatum->default_type = le32_to_cpu(buf[0]);
+	}
 	rc = hashtab_insert(h, key, cladatum);
 	if (rc)
 		goto bad;
@@ -2175,6 +2277,51 @@ static int ocontext_read(struct policydb *p, struct policydb_compat_info *info,
 					goto out;
 				break;
 			}
+			case OCON_IBPKEY:
+				rc = next_entry(nodebuf, fp, sizeof(u32) * 4);
+				if (rc)
+					goto out;
+
+				c->u.ibpkey.subnet_prefix = be64_to_cpu(*((__be64 *)nodebuf));
+
+				if (nodebuf[2] > 0xffff ||
+				    nodebuf[3] > 0xffff) {
+					rc = -EINVAL;
+					goto out;
+				}
+
+				c->u.ibpkey.low_pkey = le32_to_cpu(nodebuf[2]);
+				c->u.ibpkey.high_pkey = le32_to_cpu(nodebuf[3]);
+
+				rc = context_read_and_validate(&c->context[0],
+							       p,
+							       fp);
+				if (rc)
+					goto out;
+				break;
+			case OCON_IBENDPORT:
+				rc = next_entry(buf, fp, sizeof(u32) * 2);
+				if (rc)
+					goto out;
+				len = le32_to_cpu(buf[0]);
+
+				rc = str_read(&c->u.ibendport.dev_name, GFP_KERNEL, fp, len);
+				if (rc)
+					goto out;
+
+				if (buf[1] > 0xff || buf[1] == 0) {
+					rc = -EINVAL;
+					goto out;
+				}
+
+				c->u.ibendport.port = le32_to_cpu(buf[1]);
+
+				rc = context_read_and_validate(&c->context[0],
+							       p,
+							       fp);
+				if (rc)
+					goto out;
+				break;
 			}
 		}
 	}
@@ -2725,6 +2872,23 @@ static int common_write(void *vkey, void *datum, void *ptr)
 	return 0;
 }
 
+static int type_set_write(struct type_set *t, void *fp)
+{
+	int rc;
+	__le32 buf[1];
+
+	if (ebitmap_write(&t->types, fp))
+		return -EINVAL;
+	if (ebitmap_write(&t->negset, fp))
+		return -EINVAL;
+
+	buf[0] = cpu_to_le32(t->flags);
+	rc = put_entry(buf, sizeof(u32), 1, fp);
+	if (rc)
+		return -EINVAL;
+
+	return 0;
+}
 static int write_cons_helper(struct policydb *p, struct constraint_node *node,
 			     void *fp)
 {
@@ -2756,6 +2920,12 @@ static int write_cons_helper(struct policydb *p, struct constraint_node *node,
 				rc = ebitmap_write(&e->names, fp);
 				if (rc)
 					return rc;
+				if (p->policyvers >=
+					POLICYDB_VERSION_CONSTRAINT_NAMES) {
+					rc = type_set_write(e->type_names, fp);
+					if (rc)
+						return rc;
+				}
 				break;
 			default:
 				break;
@@ -2834,6 +3004,22 @@ static int class_write(void *vkey, void *datum, void *ptr)
 	if (rc)
 		return rc;
 
+	if (p->policyvers >= POLICYDB_VERSION_NEW_OBJECT_DEFAULTS) {
+		buf[0] = cpu_to_le32(cladatum->default_user);
+		buf[1] = cpu_to_le32(cladatum->default_role);
+		buf[2] = cpu_to_le32(cladatum->default_range);
+
+		rc = put_entry(buf, sizeof(uint32_t), 3, fp);
+		if (rc)
+			return rc;
+	}
+
+	if (p->policyvers >= POLICYDB_VERSION_DEFAULT_TYPE) {
+		buf[0] = cpu_to_le32(cladatum->default_type);
+		rc = put_entry(buf, sizeof(uint32_t), 1, fp);
+		if (rc)
+			return rc;
+	}
 	return 0;
 }
 
@@ -3056,6 +3242,33 @@ static int ocontext_write(struct policydb *p, struct policydb_compat_info *info,
 				for (j = 0; j < 4; j++)
 					nodebuf[j + 4] = c->u.node6.mask[j]; /* network order */
 				rc = put_entry(nodebuf, sizeof(u32), 8, fp);
+				if (rc)
+					return rc;
+				rc = context_write(p, &c->context[0], fp);
+				if (rc)
+					return rc;
+				break;
+			case OCON_IBPKEY:
+				*((__be64 *)nodebuf) = cpu_to_be64(c->u.ibpkey.subnet_prefix);
+
+				nodebuf[2] = cpu_to_le32(c->u.ibpkey.low_pkey);
+				nodebuf[3] = cpu_to_le32(c->u.ibpkey.high_pkey);
+
+				rc = put_entry(nodebuf, sizeof(u32), 4, fp);
+				if (rc)
+					return rc;
+				rc = context_write(p, &c->context[0], fp);
+				if (rc)
+					return rc;
+				break;
+			case OCON_IBENDPORT:
+				len = strlen(c->u.ibendport.dev_name);
+				buf[0] = cpu_to_le32(len);
+				buf[1] = cpu_to_le32(c->u.ibendport.port);
+				rc = put_entry(buf, sizeof(u32), 2, fp);
+				if (rc)
+					return rc;
+				rc = put_entry(c->u.ibendport.dev_name, 1, len, fp);
 				if (rc)
 					return rc;
 				rc = context_write(p, &c->context[0], fp);
