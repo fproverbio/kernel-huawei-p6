@@ -1105,6 +1105,8 @@ int avc_has_perm_noaudit(u32 ssid, u32 tsid,
 	node = avc_lookup(ssid, tsid, tclass);
 	if (unlikely(!node)) {
 		rcu_read_unlock();
+		// AnClark CAUTION: Remember initialize xp_node list head here!
+		INIT_LIST_HEAD(&xp_node.xpd_head);
 		security_compute_av(ssid, tsid, tclass, avd, &xp_node.xp);
 		rcu_read_lock();
 		node = avc_insert(ssid, tsid, tclass, avd, &xp_node);
