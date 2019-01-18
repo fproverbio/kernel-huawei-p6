@@ -25,6 +25,10 @@ Also, you can build this kernel alone if you want to test the new kernel, or cha
 - ARM cross-compile kits. **FriendlyARM GCC is necessary, notice that other newer kits CAN BUILD, BUT CANNOT RUN!** 
   - **[FriendlyARM GCC is here](https://github.com/AnClark/twrp_device_huawei_hwp6_u06/tree/omni-6.0/toolchain)**
   - Assume that you installed it in `/opt/FriendlyARM/toolschain/4.4.3`, and added `/opt/FriendlyARM/toolschain/4.4.3/bin` to `$PATH`.
+- **Perl Spreadsheet::ParseExcel module**. Install it via:
+  ```shell
+  sudo apt install libspreadsheet-parseexcel-perl
+  ```
 
 ### Gotta go!
 
