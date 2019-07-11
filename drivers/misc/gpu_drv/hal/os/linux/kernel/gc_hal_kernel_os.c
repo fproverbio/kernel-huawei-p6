@@ -7353,7 +7353,7 @@ gckOS_CreateSignal(
     )
 {
     gceSTATUS status;
-    gcsSIGNAL_PTR signal;
+    gcsSIGNAL_PTR signal = 0;
 
     gcmkHEADER_ARG("Os=0x%X ManualReset=%d", Os, ManualReset);
 
@@ -7401,7 +7401,7 @@ gckOS_SignalQueryHardware(
     )
 {
     gceSTATUS status;
-    gcsSIGNAL_PTR signal;
+    gcsSIGNAL_PTR signal = 0;
 
     gcmkHEADER_ARG("Os=0x%X Signal=0x%X Hardware=0x%X", Os, Signal, Hardware);
 
@@ -7429,7 +7429,7 @@ gckOS_SignalSetHardware(
     )
 {
     gceSTATUS status;
-    gcsSIGNAL_PTR signal;
+    gcsSIGNAL_PTR signal = 0;
 
     gcmkHEADER_ARG("Os=0x%X Signal=0x%X Hardware=0x%X", Os, Signal, Hardware);
 
@@ -7473,7 +7473,7 @@ gckOS_DestroySignal(
     )
 {
     gceSTATUS status;
-    gcsSIGNAL_PTR signal;
+    gcsSIGNAL_PTR signal = 0;
     gctBOOL acquired = gcvFALSE;
 
     gcmkHEADER_ARG("Os=0x%X Signal=0x%X", Os, Signal);
@@ -7543,7 +7543,7 @@ gckOS_Signal(
     )
 {
     gceSTATUS status;
-    gcsSIGNAL_PTR signal;
+    gcsSIGNAL_PTR signal = 0;
     gctBOOL acquired = gcvFALSE;
 
     gcmkHEADER_ARG("Os=0x%X Signal=0x%X State=%d", Os, Signal, State);
@@ -7731,7 +7731,7 @@ gckOS_WaitSignal(
     )
 {
     gceSTATUS status = gcvSTATUS_OK;
-    gcsSIGNAL_PTR signal;
+    gcsSIGNAL_PTR signal = 0;
 
     gcmkHEADER_ARG("Os=0x%X Signal=0x%X Wait=0x%08X", Os, Signal, Wait);
 
@@ -7905,7 +7905,7 @@ gckOS_MapSignal(
     )
 {
     gceSTATUS status;
-    gcsSIGNAL_PTR signal;
+    gcsSIGNAL_PTR signal = 0;
     gcmkHEADER_ARG("Os=0x%X Signal=0x%X Process=0x%X", Os, Signal, Process);
 
     gcmkVERIFY_ARGUMENT(Signal != gcvNULL);
