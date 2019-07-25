@@ -1189,9 +1189,9 @@ ffs_fs_mount(struct file_system_type *t, int flags,
 
 	ENTER();
 
-	ret = functionfs_check_dev_callback(dev_name);
-	if (unlikely(ret < 0))
-		return ERR_PTR(ret);
+	//ret = functionfs_check_dev_callback(dev_name);
+	//if (unlikely(ret < 0))
+	//	return ERR_PTR(ret);
 
 	ret = ffs_fs_parse_opts(&data, opts);
 	if (unlikely(ret < 0))
