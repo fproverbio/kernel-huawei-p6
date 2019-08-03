@@ -46,6 +46,7 @@
 #include "epautoconf.c"
 #include "composite.c"
 
+#include "f_fs.c"
 #include "f_mass_storage.c"
 #include "u_serial.c"
 #include "f_acm.c"
@@ -110,6 +111,9 @@ struct android_dev {
 	bool connected;
 	bool sw_connected;
 	struct work_struct work;
+
+	char ffs_aliases[256];
+
 };
 
 static struct class *android_class;
@@ -216,6 +220,140 @@ static void android_work(struct work_struct *data)
 
 /*-------------------------------------------------------------------------*/
 /* Supported functions initialization */
+
+struct functionfs_config {
+	bool opened;
+	bool enabled;
+	struct ffs_data *data;
+};
+
+static int ffs_function_init(struct android_usb_function *f,
+			     struct usb_composite_dev *cdev)
+{
+	pr_warning("android_usb: ffs function init!");
+
+	f->config = kzalloc(sizeof(struct functionfs_config), GFP_KERNEL);
+	if (!f->config)
+		return -ENOMEM;
+
+	return functionfs_init();
+}
+
+static void ffs_function_cleanup(struct android_usb_function *f)
+{
+	functionfs_cleanup();
+	kfree(f->config);
+}
+
+static int ffs_function_bind_config(struct android_usb_function *f,
+				    struct usb_configuration *c)
+{
+	pr_warning("android_usb: ffs function bind config!");
+
+	struct functionfs_config *config = f->config;
+	return functionfs_bind_config(c->cdev, c, config->data);
+}
+
+static void ffs_function_unbind_config(struct android_usb_function *f,
+				    struct usb_configuration *c)
+{
+	pr_warning("android_usb: ffs function unbind config... Actually no need to implement it");
+}
+
+static ssize_t
+ffs_aliases_show(struct device *pdev, struct device_attribute *attr, char *buf)
+{
+	//struct android_dev *dev = _android_dev;
+	struct android_dev *dev = dev_get_drvdata(pdev);
+	int ret;
+
+	
+	ret = sprintf(buf, "%s\n", dev->ffs_aliases);
+	
+
+	return ret;
+}
+
+static ssize_t
+ffs_aliases_store(struct device *pdev, struct device_attribute *attr,
+					const char *buf, size_t size)
+{
+	//struct android_dev *dev = _android_dev;
+	struct android_dev *dev = dev_get_drvdata(pdev);
+	char buff[256];
+
+	
+
+	if (dev->enabled) {
+		
+		return -EBUSY;
+	}
+
+	strlcpy(buff, buf, sizeof(buff));
+	strlcpy(dev->ffs_aliases, strim(buff), sizeof(dev->ffs_aliases));
+
+	
+
+	return size;
+}
+
+static DEVICE_ATTR(aliases, S_IRUGO | S_IWUSR, ffs_aliases_show,
+					       ffs_aliases_store);
+static struct device_attribute *ffs_function_attributes[] = {
+	&dev_attr_aliases,
+	NULL
+};
+
+static struct android_usb_function ffs_function = {
+	.name		= "ffs",
+	.init		= ffs_function_init,
+	.cleanup	= ffs_function_cleanup,
+	.bind_config	= ffs_function_bind_config,
+	.attributes	= ffs_function_attributes,
+};
+
+static int functionfs_ready_callback(struct ffs_data *ffs)
+{
+	struct android_dev *dev = _android_dev;
+	struct functionfs_config *config = ffs_function.config;
+	int ret = 0;
+
+	ret = functionfs_bind(ffs, dev->cdev);
+	if (ret)
+		goto err;
+
+	config->data = ffs;
+	config->opened = true;
+
+//	if (config->enabled)
+//		android_enable(dev);
+
+err:
+	
+	return ret;
+}
+
+static void functionfs_closed_callback(struct ffs_data *ffs)
+{
+	struct android_dev *dev = _android_dev;
+	struct functionfs_config *config = ffs_function.config;
+
+
+//	if (config->enabled)
+//		android_disable(dev);
+
+	config->opened = false;
+	config->data = NULL;
+
+	functionfs_unbind(ffs);
+}
+
+static int functionfs_check_dev_callback(const char *dev_name)
+{
+	return 0;
+}
+
+
 
 static int adb_function_init(struct android_usb_function *f, struct usb_composite_dev *cdev)
 {
@@ -868,6 +1006,7 @@ static struct android_usb_function accessory_function = {
 
 
 static struct android_usb_function *supported_functions[] = {
+	&ffs_function,
 	&adb_function,
 	&acm_function,
 	&mtp_function,
@@ -975,7 +1114,9 @@ android_unbind_enabled_functions(struct android_dev *dev,
 	struct android_usb_function *f;
 
 	list_for_each_entry(f, &dev->enabled_functions, enabled_list) {
-		if (f->unbind_config)
+		// If f is ffs, there's always an "unbind_config" there. 
+		// So explicitly ignore it, or kernel will panic.
+		if (f->unbind_config  &&  strcmp(f->name, "ffs") != 0)
 			f->unbind_config(f, c);
 	}
 }
@@ -1017,7 +1158,10 @@ functions_store(struct device *pdev, struct device_attribute *attr,
 	struct android_dev *dev = dev_get_drvdata(pdev);
 	char *name;
 	char buf[256], *b;
+	char aliases[256], *a;	
 	int err;
+	int is_ffs;
+	int ffs_enabled = 0;	
 
 	INIT_LIST_HEAD(&dev->enabled_functions);
 
@@ -1026,11 +1170,38 @@ functions_store(struct device *pdev, struct device_attribute *attr,
 
 	while (b) {
 		name = strsep(&b, ",");
-		if (name) {
-			err = android_enable_function(dev, name);
-			if (err)
-				pr_err("android_usb: Cannot enable '%s'", name);
+		if (!name)
+			continue;
+
+		is_ffs = 0;
+		strlcpy(aliases, dev->ffs_aliases, sizeof(aliases));
+		a = aliases;
+
+
+		while (a) {
+			char *alias = strsep(&a, ",");
+			if (alias && !strcmp(name, alias)) {
+				is_ffs = 1;
+				break;
+			}
 		}
+
+		if (is_ffs) {
+			if (ffs_enabled)
+				continue;
+			err = android_enable_function(dev, "ffs");
+			if (err)
+				pr_err("android_usb: Cannot enable ffs (%d)",
+					err);
+			else
+				ffs_enabled = 1;
+			continue;
+		}
+
+		err = android_enable_function(dev, name);
+		if (err)
+			pr_err("android_usb: Cannot enable '%s' (%d)",
+								name, err);
 	}
 
 	return size;
